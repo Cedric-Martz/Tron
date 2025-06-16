@@ -420,24 +420,28 @@ def main_menu_and_game(stdscr):
     """
     Main entry point: show menu, configure keys, and start the game.
     """
-    choice = menu(stdscr)
-    stdscr.clear()
-    if choice == 1:
-        ai_difficulty = difficulty_menu(stdscr)
+    while True:
+        try:
+            choice = menu(stdscr)
+        except KeyboardInterrupt:
+            return
         stdscr.clear()
-        try:
-            tron_multiplayer(stdscr, ai_difficulty=ai_difficulty)
-        except KeyboardInterrupt:
-            curses.wrapper(main_menu_and_game)
-    else:
-        num_players = choice
-        touches_list = []
-        for i in range(num_players):
-            touches_list.append(configure_keys(stdscr, f"Player {i+1}"))
-        try:
-            tron_multiplayer(stdscr, touches_list)
-        except KeyboardInterrupt:
-            curses.wrapper(main_menu_and_game)
+        if choice == 1:
+            ai_difficulty = difficulty_menu(stdscr)
+            stdscr.clear()
+            try:
+                tron_multiplayer(stdscr, ai_difficulty=ai_difficulty)
+            except KeyboardInterrupt:
+                continue
+        else:
+            num_players = choice
+            touches_list = []
+            for i in range(num_players):
+                touches_list.append(configure_keys(stdscr, f"Player {i+1}"))
+            try:
+                tron_multiplayer(stdscr, touches_list)
+            except KeyboardInterrupt:
+                continue
 
 
 if __name__ == "__main__":
