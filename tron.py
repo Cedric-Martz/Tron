@@ -255,11 +255,6 @@ def tron_multiplayer(stdscr, touches_list=None):
         stdscr.refresh()
         time.sleep(0.08)
 
-def tron_vs_ai(stdscr):
-    """
-    Start a game with player 1 (human) vs player 2 (AI).
-    """
-    tron_multiplayer(stdscr)
 
 def main_menu_and_game(stdscr):
     """
@@ -268,7 +263,7 @@ def main_menu_and_game(stdscr):
     choice = menu(stdscr)
     stdscr.clear()
     if choice == 1:
-        tron_vs_ai(stdscr)
+        tron_multiplayer(stdscr)
     else:
         num_players = choice
         touches_list = []
