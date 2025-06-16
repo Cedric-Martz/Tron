@@ -225,60 +225,105 @@ def open_space(p_ai, p_human, width, height, dx, dy, depth):
     return count
 
 
+def ai_level_1(p_ai, p_human, width, height, safe_moves):
+    """
+    Level 1: Prefer current direction, else random safe move.
+    """
+    if (p_ai['dx'], p_ai['dy']) in safe_moves and random.random() < 0.85:
+        return (p_ai['dx'], p_ai['dy'])
+    elif safe_moves:
+        straight = [move for move in safe_moves if move == (p_ai['dx'], p_ai['dy'])]
+        if straight:
+            return straight[0]
+        else:
+            return random.choice(safe_moves)
+    return (p_ai['dx'], p_ai['dy'])
+
+
+def ai_level_2(p_ai, p_human, width, height, safe_moves):
+    """
+    Level 2: Maximize open space in chosen direction.
+    """
+    if safe_moves:
+        best = max(safe_moves, key=lambda m: open_space(p_ai, p_human, width, height, m[0], m[1], 5))
+        return best
+    return (p_ai['dx'], p_ai['dy'])
+
+
+def ai_level_3(p_ai, p_human, width, height, safe_moves):
+    """
+    Level 3: Maximize open space, minimize distance to human.
+    """
+    if safe_moves:
+        hx, hy = p_human['x'], p_human['y']
+        ax, ay = p_ai['x'], p_ai['y']
+        def score(m):
+            nx, ny = ax + m[0], ay + m[1]
+            dist = abs(nx - hx) + abs(ny - hy)
+            space = open_space(p_ai, p_human, width, height, m[0], m[1], 11)
+            return (-space, dist)  # maximize space, minimize distance
+        best = min(safe_moves, key=score)
+        return best
+    return (p_ai['dx'], p_ai['dy'])
+
+
+def ai_level_4(p_ai, p_human, width, height, safe_moves):
+    """
+    Level 4: Minimize distance to human, then maximize open space.
+    """
+    if safe_moves:
+        hx, hy = p_human['x'], p_human['y']
+        ax, ay = p_ai['x'], p_ai['y']
+        def score(m):
+            nx, ny = ax + m[0], ay + m[1]
+            dist = abs(nx - hx) + abs(ny - hy)
+            space = open_space(p_ai, p_human, width, height, m[0], m[1], 15)
+            # Prioritize getting closer, then open space
+            return (dist, -space)
+        best = min(safe_moves, key=score)
+        return best
+    return (p_ai['dx'], p_ai['dy'])
+
+
+def ai_level_5(p_ai, p_human, width, height, safe_moves):
+    """
+    Level 5: Reserved for future advanced AI.
+    """
+    # TODO: Implement advanced AI logic for level 5
+    return (p_ai['dx'], p_ai['dy'])
+
+
+def ai_level_6(p_ai, p_human, width, height, safe_moves):
+    """
+    Level 6: Reserved for future super-advanced AI.
+    """
+    # TODO: Implement super-advanced AI logic for level 6
+    return (p_ai['dx'], p_ai['dy'])
+
+
 def ai_choose_move(p_ai, p_human, width, height, safe_moves, difficulty):
     """
     Chooses the AI's move based on the difficulty and safe moves.
     """
     if difficulty == 0:
+        # Dumb random
         possible_moves = [(0, -1), (0, 1), (1, 0), (-1, 0)]
         if random.random() < 0.5 or not safe_moves:
             return random.choice(possible_moves)
         else:
             return random.choice(safe_moves)
     elif difficulty == 1:
-        if safe_moves:
-            return random.choice(safe_moves)
+        return ai_level_1(p_ai, p_human, width, height, safe_moves)
     elif difficulty == 2:
-        if (p_ai['dx'], p_ai['dy']) in safe_moves and random.random() < 0.7:
-            return (p_ai['dx'], p_ai['dy'])
-        elif safe_moves:
-            return random.choice(safe_moves)
+        return ai_level_2(p_ai, p_human, width, height, safe_moves)
     elif difficulty == 3:
-        if (p_ai['dx'], p_ai['dy']) in safe_moves and random.random() < 0.85:
-            return (p_ai['dx'], p_ai['dy'])
-        elif safe_moves:
-            straight = [move for move in safe_moves if move == (p_ai['dx'], p_ai['dy'])]
-            if straight:
-                return straight[0]
-            else:
-                return random.choice(safe_moves)
+        return ai_level_3(p_ai, p_human, width, height, safe_moves)
     elif difficulty == 4:
-        if safe_moves:
-            best = max(safe_moves, key=lambda m: open_space(p_ai, p_human, width, height, m[0], m[1], 5))
-            return best
+        return ai_level_4(p_ai, p_human, width, height, safe_moves)
     elif difficulty == 5:
-        if safe_moves:
-            hx, hy = p_human['x'], p_human['y']
-            ax, ay = p_ai['x'], p_ai['y']
-            def score(m):
-                nx, ny = ax + m[0], ay + m[1]
-                dist = abs(nx - hx) + abs(ny - hy)
-                space = open_space(p_ai, p_human, width, height, m[0], m[1], 11)
-                return (-space, dist)  # maximize space, minimize distance
-            best = min(safe_moves, key=score)
-            return best
+        return ai_level_5(p_ai, p_human, width, height, safe_moves)
     elif difficulty == 6:
-        if safe_moves:
-            hx, hy = p_human['x'], p_human['y']
-            ax, ay = p_ai['x'], p_ai['y']
-            def score(m):
-                nx, ny = ax + m[0], ay + m[1]
-                dist = abs(nx - hx) + abs(ny - hy)
-                space = open_space(p_ai, p_human, width, height, m[0], m[1], 15)
-                # Prioritize getting closer, then open space
-                return (dist, -space)
-            best = min(safe_moves, key=score)
-            return best
+        return ai_level_6(p_ai, p_human, width, height, safe_moves)
     return (p_ai['dx'], p_ai['dy'])
 
 
@@ -383,7 +428,6 @@ def main_menu_and_game(stdscr):
         try:
             tron_multiplayer(stdscr, ai_difficulty=ai_difficulty)
         except KeyboardInterrupt:
-            curses.endwin()
             curses.wrapper(main_menu_and_game)
     else:
         num_players = choice
@@ -393,7 +437,6 @@ def main_menu_and_game(stdscr):
         try:
             tron_multiplayer(stdscr, touches_list)
         except KeyboardInterrupt:
-            curses.endwin()
             curses.wrapper(main_menu_and_game)
 
 
