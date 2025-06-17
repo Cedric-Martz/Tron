@@ -1,7 +1,7 @@
 import curses
 import time
 import random
-
+from collections import deque
 
 def init_colors():
     """
@@ -107,15 +107,15 @@ def reset_players(width, height, num_players, colors, old_players=None):
     players = []
     for i in range(num_players):
         color_idx = colors[i % len(colors)]
-        score = old_players[i]['score'] if old_players else 0
+        score_choice = old_players[i]['score_choice'] if old_players else 0
         players.append({
             'x': positions[i][0],
             'y': positions[i][1],
-            'dx': positions[i][2],
-            'dy': positions[i][3],
+            'delta_x': positions[i][2],
+            'delta_y': positions[i][3],
             'trail': set(),
             'color': color_idx,
-            'score': score
+            'score_choice': score_choice
         })
     return players
 
@@ -126,13 +126,13 @@ def draw_scores(stdscr, players, width):
     """
     color_names = {1: "GREEN", 2: "RED", 4: "CYAN", 6: "BLUE"}
     x = width // 2
-    total_len = sum(len(color_names.get(p['color'], "P")) + len(f":{p['score']}  ") for p in players)
+    total_len = sum(len(color_names.get(p['color'], "P")) + len(f":{p['score_choice']}  ") for p in players)
     x -= total_len // 2
     for p in players:
         name = color_names.get(p['color'], "P")
-        score_str = f"{name}:{p['score']}  "
+        score_str = f"{name}:{p['score_choice']}  "
         stdscr.addstr(0, x, name, curses.color_pair(p['color']) | curses.A_BOLD)
-        stdscr.addstr(0, x + len(name), f":{p['score']}  ", curses.A_BOLD)
+        stdscr.addstr(0, x + len(name), f":{p['score_choice']}  ", curses.A_BOLD)
         x += len(score_str)
 
 
@@ -141,8 +141,8 @@ def draw_trails(stdscr, players):
     Draw the trails for all players.
     """
     for p in players:
-        for tx, ty in p['trail']:
-            stdscr.addstr(ty, tx, "O", curses.color_pair(p['color']))
+        for trail_x, trail_y in p['trail']:
+            stdscr.addstr(trail_y, trail_x, "O", curses.color_pair(p['color']))
 
 
 def handle_pause(stdscr, width, height):
@@ -166,78 +166,114 @@ def handle_player_input(key, players, touches_list):
     opposites = {(0, -1): (0, 1), (0, 1): (0, -1), (1, 0): (-1, 0), (-1, 0): (1, 0)}
     for idx, touches in enumerate(touches_list):
         if touches:
-            px, py = players[idx]['dx'], players[idx]['dy']
-            if key == touches['UP'] and (px, py) != (0, 1):
-                players[idx]['dx'], players[idx]['dy'] = 0, -1
-            elif key == touches['DOWN'] and (px, py) != (0, -1):
-                players[idx]['dx'], players[idx]['dy'] = 0, 1
-            elif key == touches['LEFT'] and (px, py) != (1, 0):
-                players[idx]['dx'], players[idx]['dy'] = -1, 0
-            elif key == touches['RIGHT'] and (px, py) != (-1, 0):
-                players[idx]['dx'], players[idx]['dy'] = 1, 0
+            generic_position_x, generic_position_y = players[idx]['delta_x'], players[idx]['delta_y']
+            if key == touches['UP'] and (generic_position_x, generic_position_y) != (0, 1):
+                players[idx]['delta_x'], players[idx]['delta_y'] = 0, -1
+            elif key == touches['DOWN'] and (generic_position_x, generic_position_y) != (0, -1):
+                players[idx]['delta_x'], players[idx]['delta_y'] = 0, 1
+            elif key == touches['LEFT'] and (generic_position_x, generic_position_y) != (1, 0):
+                players[idx]['delta_x'], players[idx]['delta_y'] = -1, 0
+            elif key == touches['RIGHT'] and (generic_position_x, generic_position_y) != (-1, 0):
+                players[idx]['delta_x'], players[idx]['delta_y'] = 1, 0
 
 
 def handle_default_input(key, players):
     """
     Update player 1 direction using arrow keys.
     """
-    px, py = players[0]['dx'], players[0]['dy']
-    if key == curses.KEY_UP and (px, py) != (0, 1):
-        players[0]['dx'], players[0]['dy'] = 0, -1
-    elif key == curses.KEY_DOWN and (px, py) != (0, -1):
-        players[0]['dx'], players[0]['dy'] = 0, 1
-    elif key == curses.KEY_LEFT and (px, py) != (1, 0):
-        players[0]['dx'], players[0]['dy'] = -1, 0
-    elif key == curses.KEY_RIGHT and (px, py) != (-1, 0):
-        players[0]['dx'], players[0]['dy'] = 1, 0
+    generic_position_x, generic_position_y = players[0]['delta_x'], players[0]['delta_y']
+    if key == curses.KEY_UP and (generic_position_x, generic_position_y) != (0, 1):
+        players[0]['delta_x'], players[0]['delta_y'] = 0, -1
+    elif key == curses.KEY_DOWN and (generic_position_x, generic_position_y) != (0, -1):
+        players[0]['delta_x'], players[0]['delta_y'] = 0, 1
+    elif key == curses.KEY_LEFT and (generic_position_x, generic_position_y) != (1, 0):
+        players[0]['delta_x'], players[0]['delta_y'] = -1, 0
+    elif key == curses.KEY_RIGHT and (generic_position_x, generic_position_y) != (-1, 0):
+        players[0]['delta_x'], players[0]['delta_y'] = 1, 0
 
 
 def get_possible_moves(p_ai, p_human, width, height):
     """
-    Returns a list of possible moves (dx, dy) that do not collide with walls or trails.
+    Returns a list of possible moves (delta_x, delta_y) that do not collide with walls or trails.
     """
     possible_moves = [(0, -1), (0, 1), (1, 0), (-1, 0)]
     safe_moves = []
-    for dx, dy in possible_moves:
-        nx, ny = p_ai['x'] + dx, p_ai['y'] + dy
-        if (nx <= 0 or nx >= width - 1 or ny <= 0 or ny >= height - 1):
+    for delta_x, delta_y in possible_moves:
+        next_tested_position_x, next_tested_position_y = p_ai['x'] + delta_x, p_ai['y'] + delta_y
+        if (next_tested_position_x <= 0 or next_tested_position_x >= width - 1 or next_tested_position_y <= 0 or next_tested_position_y >= height - 1):
             continue
-        if (nx, ny) in p_ai['trail'] or (nx, ny) in p_human['trail']:
+        if (next_tested_position_x, next_tested_position_y) in p_ai['trail'] or (next_tested_position_x, next_tested_position_y) in p_human['trail']:
             continue
-        safe_moves.append((dx, dy))
+        safe_moves.append((delta_x, delta_y))
     return safe_moves
 
 
-def open_space(p_ai, p_human, width, height, dx, dy, depth):
+
+def flood_fill_space(start_x, start_y, width, height, ai_trail, human_trail, max_depth=20):
     """
-    Returns the number of open spaces in the direction (dx, dy) up to 'depth'.
+    Explore the space around (start_x, start_y) using BFS,
     """
-    nx, ny = p_ai['x'], p_ai['y']
+    visited = set()
+    queue = deque()
+    queue.append((start_x, start_y, 0))
+
+    while queue:
+        x, y, depth = queue.popleft()
+        if (x, y) in visited or depth > max_depth:
+            continue
+        if x <= 0 or x >= width - 1 or y <= 0 or y >= height - 1:
+            continue
+        if (x, y) in ai_trail or (x, y) in human_trail:
+            continue
+
+        visited.add((x, y))
+        for delta_x, delta_y in [(-1,0), (1,0), (0,-1), (0,1)]:
+            queue.append((x + delta_x, y + delta_y, depth + 1))
+
+    return len(visited)
+
+
+
+def open_space(p_ai, p_human, width, height, delta_x, delta_y, depth):
+    """
+    Returns the number of open spaces in the direction (delta_x, delta_y) up to 'depth'.
+    """
+    next_tested_position_x, next_tested_position_y = p_ai['x'], p_ai['y']
     count = 0
     for _ in range(1, depth + 1):
-        nx += dx
-        ny += dy
-        if (nx <= 0 or nx >= width - 1 or ny <= 0 or ny >= height - 1):
+        next_tested_position_x += delta_x
+        next_tested_position_y += delta_y
+        if (next_tested_position_x <= 0 or next_tested_position_x >= width - 1 or next_tested_position_y <= 0 or next_tested_position_y >= height - 1):
             break
-        if (nx, ny) in p_ai['trail'] or (nx, ny) in p_human['trail']:
+        if (next_tested_position_x, next_tested_position_y) in p_ai['trail'] or (next_tested_position_x, next_tested_position_y) in p_human['trail']:
             break
         count += 1
     return count
+
+
+def is_player_facing(ai_pos, human_pos, human_dir, max_distance=3):
+    delta_x, delta_y = human_dir
+    for i in range(1, max_distance + 1):
+        generic_position_x = human_pos['x'] + delta_x * i
+        generic_position_y = human_pos['y'] + delta_y * i
+        if (generic_position_x, generic_position_y) == (ai_pos['x'], ai_pos['y']):
+            return True
+    return False
 
 
 def ai_level_1(p_ai, p_human, width, height, safe_moves):
     """
     Level 1: Prefer current direction, else random safe move.
     """
-    if (p_ai['dx'], p_ai['dy']) in safe_moves and random.random() < 0.85:
-        return (p_ai['dx'], p_ai['dy'])
+    if (p_ai['delta_x'], p_ai['delta_y']) in safe_moves and random.random() < 0.85:
+        return (p_ai['delta_x'], p_ai['delta_y'])
     elif safe_moves:
-        straight = [move for move in safe_moves if move == (p_ai['dx'], p_ai['dy'])]
+        straight = [move for move in safe_moves if move == (p_ai['delta_x'], p_ai['delta_y'])]
         if straight:
             return straight[0]
         else:
             return random.choice(safe_moves)
-    return (p_ai['dx'], p_ai['dy'])
+    return (p_ai['delta_x'], p_ai['delta_y'])
 
 
 def ai_level_2(p_ai, p_human, width, height, safe_moves):
@@ -245,9 +281,8 @@ def ai_level_2(p_ai, p_human, width, height, safe_moves):
     Level 2: Maximize open space in chosen direction.
     """
     if safe_moves:
-        best = max(safe_moves, key=lambda m: open_space(p_ai, p_human, width, height, m[0], m[1], 5))
-        return best
-    return (p_ai['dx'], p_ai['dy'])
+        return max(safe_moves, key=lambda m: open_space(p_ai, p_human, width, height, m[0], m[1], 5))
+    return (p_ai['delta_x'], p_ai['delta_y'])
 
 
 def ai_level_3(p_ai, p_human, width, height, safe_moves):
@@ -255,16 +290,14 @@ def ai_level_3(p_ai, p_human, width, height, safe_moves):
     Level 3: Maximize open space, minimize distance to human.
     """
     if safe_moves:
-        hx, hy = p_human['x'], p_human['y']
-        ax, ay = p_ai['x'], p_ai['y']
-        def score(m):
-            nx, ny = ax + m[0], ay + m[1]
-            dist = abs(nx - hx) + abs(ny - hy)
-            space = open_space(p_ai, p_human, width, height, m[0], m[1], 11)
-            return (-space, dist)  # maximize space, minimize distance
-        best = min(safe_moves, key=score)
-        return best
-    return (p_ai['dx'], p_ai['dy'])
+        human_x, human_y = p_human['x'], p_human['y']
+        ai_x, ai_y = p_ai['x'], p_ai['y']
+        def score_choice(m):
+            next_tested_position_x, next_tested_position_y = ai_x + m[0], ai_y + m[1]
+            return (-open_space(p_ai, p_human, width, height, m[0], m[1], 11),
+                    abs(next_tested_position_x - human_x) + abs(next_tested_position_y - human_y))
+        return min(safe_moves, key=score_choice)
+    return (p_ai['delta_x'], p_ai['delta_y'])
 
 
 def ai_level_4(p_ai, p_human, width, height, safe_moves):
@@ -272,33 +305,67 @@ def ai_level_4(p_ai, p_human, width, height, safe_moves):
     Level 4: Minimize distance to human, then maximize open space.
     """
     if safe_moves:
-        hx, hy = p_human['x'], p_human['y']
-        ax, ay = p_ai['x'], p_ai['y']
-        def score(m):
-            nx, ny = ax + m[0], ay + m[1]
-            dist = abs(nx - hx) + abs(ny - hy)
-            space = open_space(p_ai, p_human, width, height, m[0], m[1], 15)
-            # Prioritize getting closer, then open space
-            return (dist, -space)
-        best = min(safe_moves, key=score)
-        return best
-    return (p_ai['dx'], p_ai['dy'])
+        human_x, human_y = p_human['x'], p_human['y']
+        ai_x, ai_y = p_ai['x'], p_ai['y']
+        def score_choice(m):
+            next_tested_position_x, next_tested_position_y = ai_x + m[0], ai_y + m[1]
+            return (abs(next_tested_position_x - human_x) + abs(next_tested_position_y - human_y),
+                    -open_space(p_ai, p_human, width, height, m[0], m[1], 11))
+        return min(safe_moves, key=score_choice)
+    return (p_ai['delta_x'], p_ai['delta_y'])
 
 
 def ai_level_5(p_ai, p_human, width, height, safe_moves):
     """
-    Level 5: Reserved for future advanced AI.
+    Level 5: Balanced AI. Avoids direct confrontation if too close, 
+    favors space and centrality, mixes attack/defense.
     """
-    # TODO: Implement advanced AI logic for level 5
-    return (p_ai['dx'], p_ai['dy'])
+    if not safe_moves:
+        return (p_ai['delta_x'], p_ai['delta_y'])
+
+    human_x, human_y = p_human['x'], p_human['y']
+    ai_x, ai_y = p_ai['x'], p_ai['y']
+    center_x, center_y = width // 2, height // 2
+
+    player_threat = is_player_facing(p_ai, p_human, (p_human['delta_x'], p_human['delta_y']), max_distance=3)
+
+    def score_choice(m):
+        next_tested_position_x, next_tested_position_y = ai_x + m[0], ai_y + m[1]
+        dist_to_human = abs(next_tested_position_x - human_x) + abs(next_tested_position_y - human_y)
+        space = open_space(p_ai, p_human, width, height, m[0], m[1], 15)
+        dist_to_center = abs(next_tested_position_x - center_x) + abs(next_tested_position_y - center_y)
+
+        threat_penalty = 5 if player_threat and m == (-p_human['delta_x'], -p_human['delta_y']) else 0
+
+        return (-space + dist_to_human * 0.3 + dist_to_center * 0.2 + threat_penalty)
+
+    return min(safe_moves, key=score_choice)
+
 
 
 def ai_level_6(p_ai, p_human, width, height, safe_moves):
     """
-    Level 6: Reserved for future super-advanced AI.
+    Level 6: Expert AI. Combines global awareness, flood-fill, 
+    predictive avoidance, fluidity, and offensive potential.
     """
-    # TODO: Implement super-advanced AI logic for level 6
-    return (p_ai['dx'], p_ai['dy'])
+    if not safe_moves:
+        return (p_ai['delta_x'], p_ai['delta_y'])
+
+    human_x, human_y = p_human['x'], p_human['y']
+    ai_x, ai_y = p_ai['x'], p_ai['y']
+    center_x, center_y = width // 2, height // 2
+
+    def score_choice(m):
+        next_tested_position_x, next_tested_position_y = ai_x + m[0], ai_y + m[1]
+        dist_to_human = abs(next_tested_position_x - human_x) + abs(next_tested_position_y - human_y)
+        dist_to_center = abs(next_tested_position_x - center_x) + abs(next_tested_position_y - center_y)
+        space = flood_fill_space(next_tested_position_x, next_tested_position_y, width, height, p_ai['trail'], p_human['trail'])
+        same_dir = 0 if m == (p_ai['delta_x'], p_ai['delta_y']) else 1
+        toward_player = 1 if (m[0], m[1]) == (1 if human_x > ai_x else -1 if human_x < ai_x else 0,
+                                              1 if human_y > ai_y else -1 if human_y < ai_y else 0) else 0
+        return (-space * 2 + dist_to_human * 0.4 + dist_to_center * 0.3 + same_dir * 1.2 - toward_player * 1.5)
+    return min(safe_moves, key=score_choice)
+
 
 
 def ai_choose_move(p_ai, p_human, width, height, safe_moves, difficulty):
@@ -306,7 +373,6 @@ def ai_choose_move(p_ai, p_human, width, height, safe_moves, difficulty):
     Chooses the AI's move based on the difficulty and safe moves.
     """
     if difficulty == 0:
-        # Dumb random
         possible_moves = [(0, -1), (0, 1), (1, 0), (-1, 0)]
         if random.random() < 0.5 or not safe_moves:
             return random.choice(possible_moves)
@@ -324,7 +390,7 @@ def ai_choose_move(p_ai, p_human, width, height, safe_moves, difficulty):
         return ai_level_5(p_ai, p_human, width, height, safe_moves)
     elif difficulty == 6:
         return ai_level_6(p_ai, p_human, width, height, safe_moves)
-    return (p_ai['dx'], p_ai['dy'])
+    return (p_ai['delta_x'], p_ai['delta_y'])
 
 
 def ai_move(p_ai, p_human, width, height, difficulty=0):
@@ -334,7 +400,7 @@ def ai_move(p_ai, p_human, width, height, difficulty=0):
     """
     safe_moves = get_possible_moves(p_ai, p_human, width, height)
     move = ai_choose_move(p_ai, p_human, width, height, safe_moves, difficulty)
-    p_ai['dx'], p_ai['dy'] = move
+    p_ai['delta_x'], p_ai['delta_y'] = move
 
 
 def move_players(players):
@@ -342,8 +408,8 @@ def move_players(players):
     Move all players one step in their current direction.
     """
     for p in players:
-        p['x'] += p['dx']
-        p['y'] += p['dy']
+        p['x'] += p['delta_x']
+        p['y'] += p['delta_y']
 
 
 def check_collisions(players, width, height):
@@ -375,10 +441,10 @@ def award_points(players, crashed_idx):
     """
     for idx, p in enumerate(players):
         if idx != crashed_idx:
-            p['score'] += 1
+            p['score_choice'] += 1
 
 
-def tron_multiplayer(stdscr, touches_list=None, ai_difficulty=0):
+def tron_game_loop(stdscr, touches_list=None, ai_difficulty=0):
     """
     Main game loop for multiplayer and AI modes.
     """
@@ -403,6 +469,9 @@ def tron_multiplayer(stdscr, touches_list=None, ai_difficulty=0):
             continue
         update_trails(players)
         key = stdscr.getch()
+        if key in (3, 4, 27): # CTRL+C, CTRL+D, ESC closes the game
+            curses.endwin()
+            exit(0)
         if key == ord(' '):
             handle_pause(stdscr, width, height)
             continue
@@ -421,31 +490,25 @@ def main_menu_and_game(stdscr):
     Main entry point: show menu, configure keys, and start the game.
     """
     while True:
-        try:
-            choice = menu(stdscr)
-        except KeyboardInterrupt:
-            return
+        choice = menu(stdscr)
         stdscr.clear()
         if choice == 1:
             ai_difficulty = difficulty_menu(stdscr)
             stdscr.clear()
-            try:
-                tron_multiplayer(stdscr, ai_difficulty=ai_difficulty)
-            except KeyboardInterrupt:
-                continue
+            tron_game_loop(stdscr, ai_difficulty=ai_difficulty)
         else:
-            num_players = choice
             touches_list = []
-            for i in range(num_players):
+            for i in range(choice):
                 touches_list.append(configure_keys(stdscr, f"Player {i+1}"))
-            try:
-                tron_multiplayer(stdscr, touches_list)
-            except KeyboardInterrupt:
+
+            if len(touches_list) != choice:
                 continue
+            tron_game_loop(stdscr, touches_list)
 
 
 if __name__ == "__main__":
     try:
         curses.wrapper(main_menu_and_game)
     except KeyboardInterrupt:
-        print("GAME STOPPED")
+        pass
+    curses.endwin()
